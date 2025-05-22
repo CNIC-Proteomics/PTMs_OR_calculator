@@ -191,7 +191,7 @@ def main(path,path_exp,group_column_header, nm_label,nm_stat_header,
     logging.info('Applying filters')
 
     print('\n'+'pvalue threshold:',stat_threshold)
-    print('pgmGFrequency threshold:', pgm_freq_threshold,'\n')
+    print('pgmFrequency threshold:', pgm_freq_threshold,'\n')
 
     filtered_table=filter_table(limma_table,group_column_header, nm_label,nm_stat_header,
                                 mod_stat_header, pgm_freq_header, stat_threshold, pgm_freq_threshold)
@@ -207,7 +207,7 @@ def main(path,path_exp,group_column_header, nm_label,nm_stat_header,
     formulas=[f'{binary_exp_table_label}~{i.split("_")[-1]}+{i}' for i in prepared_table[('pgm','BN')]]
     variables=prepared_table[('pgm','BN')].to_list()
     
-    logging.info('Normalizing data')
+    logging.info('Standarizing data')
 
 
     norm_table=norm_files(prepared_table,integrations_columns,prot_integration_label, nm_integration_label, mod_integration_label,
@@ -218,7 +218,7 @@ def main(path,path_exp,group_column_header, nm_label,nm_stat_header,
     binary_table=pd.merge(exp_table,norm_table,left_on='Sample',right_on='Sample')
     binary_table.columns=[i.replace('-','_') for i in binary_table.columns]
 
-    binary_table.to_excel(r'S:\U_Proteomica\LABS\LAB_ARR\LaCaixa\tejidos-secretomas\New_Comet_500\final_iSanxot\Intima\Q1\reports\WF\3_FDRoptimizer\file_to_check.xlsx')
+    # binary_table.to_excel(r'S:\U_Proteomica\LABS\LAB_ARR\LaCaixa\tejidos-secretomas\New_Comet_500\final_iSanxot\Intima\Q1\reports\WF\3_FDRoptimizer\file_to_check.xlsx')
 
     logging.info('Applying Binary loggistic regression')
     
@@ -251,7 +251,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    log_file = outfile = args.infile[:-4] + '_binary_regression_log.txt'
+    path=args.infile
+    path_exp=args.experiment_table
+    path_report=args.outfile
+    log_file = path_report[:-4] + '_binary_regression_log.txt'
 
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -263,9 +266,6 @@ if __name__ == '__main__':
     # start main function
     logging.info('start script: '+"{0}".format(" ".join([x for x in sys.argv])))
 
-    path=args.infile
-    path_exp=args.experiment_table
-    path_report=args.outfile
 
     config = configparser.ConfigParser(inline_comment_prefixes='#')
     config.read(args.config)
@@ -301,5 +301,11 @@ if __name__ == '__main__':
 
     logging.info('End script')
 
-    file_handler = logging.FileHandler(os.path.join(os.path.dirname(path_report),
-                                                    os.path.basename(path)+'_ORs_calculator.log'))
+    # file_handler = logging.FileHandler(os.path.join(os.path.dirname(path_report),
+    #                                                 os.path.basename(path).split('.tsv')[0]+'_ORs_calculator.log'))
+    
+    # logging.basicConfig(level=logging.INFO,
+    #                 format='%(asctime)s - %(levelname)s - %(message)s',
+    #                 datefmt='%m/%d/%Y %I:%M:%S %p',
+    #                 handlers=[file_handler,
+    #                             logging.StreamHandler()])
