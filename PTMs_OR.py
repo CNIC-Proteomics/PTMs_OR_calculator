@@ -24,11 +24,18 @@ import argparse
 import os
 import sys
 import logging
+import openpyxl
+
 warnings.filterwarnings("ignore")
 
 
 
 """ Functions """
+
+
+def check_folder(outfolder):
+    if not os.path.exists(outfolder):
+        os.makedirs(outfolder, exist_ok=True)
 
 
 def read_file(path, raw_table):
@@ -37,7 +44,7 @@ def read_file(path, raw_table):
         limma_table=pd.read_csv(path,sep='\t', header=[0,1])
         return limma_table
     else:
-        exp_table=pd.read_csv(path,sep='\t')
+        exp_table=pd.read_csv(path,sep='\t', header=[0,1])
         return exp_table
     
 
@@ -59,15 +66,16 @@ def filter_table(raw_table, group_column_header, nm_label,nm_stat_header,
 
 
 
-def prepare_table(filtered_table,samples,pgm_column_header, integrations_columns, 
-                  columns_to_save,prot_column_header, group_column_header):
+def prepare_table(filtered_table,samples,pgm_column_header, integrations_columns, columns_to_save,prot_column_header,
+                  group_column_header):
     
     filtered_table_nodup=filtered_table.drop_duplicates(pgm_column_header)
     headers=pd.MultiIndex.from_product([integrations_columns,samples])
     new_headers=columns_to_save+headers.to_list()
     def_table=filtered_table_nodup.loc[:,new_headers].reset_index(drop=True)
     prot_list=def_table[prot_column_header]
-    def_table[('pgm','BN')]=[f'A{i}_{prot_list[i]}' if 'NM' not in str(def_table[group_column_header][i]) else f'A{i}_NM_{prot_list[i]}' for i in range(len(def_table[group_column_header]))]
+    def_table[('pgm','BN')]=[f'A{i}_{prot_list[i]}' if 'NM' not in str(def_table[group_column_header][i]) else 
+                             f'A{i}_NM_{prot_list[i]}' for i in range(len(def_table[group_column_header]))]
 
     return def_table
 
@@ -107,7 +115,7 @@ def norm_files(tabla,integrations_columns,prot_integration_label, nm_integration
 
 
 
-def binary_regression(binary_table, formulas,variables):
+def binary_regression(binary_table, formulas,variables, correct_param):
 
     coefs=[]
     pvalues=[]
@@ -148,7 +156,11 @@ def binary_regression(binary_table, formulas,variables):
     df_results=pd.concat([coefs_df,pvalues_df,ci_df],axis=1)
 
     params=['OR','pvalues','CI_2.5','CI_97.5']
-    columns=['Intercept','Protein','Mod']
+
+    if correct_param ==1:
+        columns=['Intercept','Protein','Mod']
+    else:
+        columns=['Intercept','Mod']
     # columns=['Intercept','Protein']
     header=pd.MultiIndex.from_product([params,columns])
 
@@ -163,6 +175,87 @@ def binary_regression(binary_table, formulas,variables):
     return df_final
 
 
+def merge_report(report,data_table,columns_to_save):
+
+    meta_data=data_table.set_index(('pgm','BN')).loc[:,columns_to_save]
+    final_report=pd.merge(meta_data,report,left_index=True,right_index=True)
+
+    return final_report
+
+
+def plot_joiner(final_report, path_plots, path_plot_filtered, prot_column_header,
+                filter_label,contrast, outfolder):
+
+
+    if path_plots:
+
+
+        ptmMapPath_nofilt = path_plots
+        ptmMapPath_filt = path_plot_filtered
+        plotted_q = [os.path.splitext(j)[0] for j in os.listdir(ptmMapPath_nofilt)]
+        final_report[('PTMMap','NoFilt')]=[f"=HYPERLINK(\"{os.path.join(ptmMapPath_nofilt, j)}.html\", \"{j}\")" if j in plotted_q and
+                                           contrast in os.path.dirname(path_plots) and contrast in os.path.dirname(path_plot_filtered)
+                                           else '' for j in final_report[prot_column_header]]
+        
+        final_report[('PTMMap','Filt')]=[f"=HYPERLINK(\"{os.path.join(ptmMapPath_filt, j)}.html\", \"{j}\")" if j in plotted_q and 
+                                         contrast in os.path.dirname(path_plots) and contrast in os.path.dirname(path_plot_filtered) 
+                                         else '' for j in final_report[prot_column_header]]
+        
+        if contrast not in os.path.dirname(path_plots) or contrast not in os.path.dirname(path_plot_filtered):
+
+            logging.warning('You have provide PTMMaps that do not belong to the contrast you are analyzing')
+
+
+    else:
+
+        ptmMapPath_nofilt = os.path.join(os.path.dirname(outfolder), f'PTMMaps/{contrast}/plots')
+        ptmMapPath_filt = os.path.join(os.path.dirname(outfolder), f'PTMMaps/{contrast}/plots_{filter_label}')
+        plotted_q = [os.path.splitext(j)[0] for j in os.listdir(ptmMapPath_nofilt)]
+        ptmMapPathExcel_nofilt = f'../PTMMaps/{contrast}/plots'
+        ptmMapPathExcel_filt = f'../PTMMaps/{contrast}/plots_{filter_label}'
+
+        if os.path.exists(ptmMapPath_filt) and os.path.exists(ptmMapPath_nofilt):
+
+            final_report[('PTMMap','NoFilt')]=[f"=HYPERLINK(\"{os.path.join(ptmMapPathExcel_nofilt, j)}.html\", \"{j}\")" if j in plotted_q else j for j in final_report[prot_column_header]]
+            final_report[('PTMMap','Filt')]=[f"=HYPERLINK(\"{os.path.join(ptmMapPathExcel_filt, j)}.html\", \"{j}\")" if j in plotted_q else ''  for j in final_report[prot_column_header]]
+
+        else:
+            final_report[('PTMMap','NoFilt')]=''
+            final_report[('PTMMap','Filt')]=''
+            logging.warning('Your PTMMaps paths are wrong')
+
+    return final_report
+
+
+
+def report_format (report_plots, path_report, correct_param):
+
+    header=list(zip(*report_plots.columns.to_list()))
+    report_plots.columns = np.arange(0, report_plots.shape[1])
+    report_plots=pd.concat([pd.DataFrame(header),report_plots])
+    report_plots.to_excel(path_report,index=False, header=False)
+
+    toFormat = [n+1 for n,i in enumerate(report_plots.iloc[:, -1]) if 'HYPERLINK' in i]
+    toFormat2 = [n+1 for n,i in enumerate(report_plots.iloc[:, -2]) if 'HYPERLINK' in i]
+
+
+    book = openpyxl.load_workbook(path_report)
+
+    sheet = book['Sheet1']
+
+    if correct_param==1:
+        columns=['X','Y']
+    else:
+        columns=['T','U']
+
+    for i in toFormat:
+        sheet[f'{columns[0]}{i}'].font = openpyxl.styles.Font(color='0000FF', underline='single')
+
+    for i in toFormat2:
+        sheet[f'{columns[1]}{i}'].font = openpyxl.styles.Font(color='0000FF', underline='single')
+
+    book.save(path_report)
+
 
 def write_report(report,data_table,columns_to_save, path_report):
 
@@ -174,62 +267,88 @@ def write_report(report,data_table,columns_to_save, path_report):
 
 
 
-def main(path,path_exp,group_column_header, nm_label,nm_stat_header,
-         mod_stat_header,pgm_freq_header, stat_threshold, pgm_freq_threshold,
+def main(path,path_exp,group_column_header, nm_label,nm_stat_header_contrast,
+         mod_stat_header_contrast,pgm_freq_header, stat_threshold, pgm_freq_threshold,
          integrations_columns, columns_to_save, pgm_column_header,prot_column_header,
          prot_integration_label, nm_integration_label, mod_integration_label,path_report,
-         binary_exp_table_label):
+         binary_exp_table_label,groups, path_plots, path_plot_filtered, filter_label,outfolder,
+         correct_param):
 
-    print('\n')
     logging.info('Reading files')
 
     limma_table=read_file(path,True)
 
     exp_table=read_file(path_exp,False)
-    samples=exp_table['Sample'].to_list()
 
-    logging.info('Applying filters')
+    logging.info('Applying filters'+'\n')
 
-    print('\n'+'pvalue threshold:',stat_threshold)
-    print('pgmFrequency threshold:', pgm_freq_threshold,'\n')
+    logging.info('pvalue threshold: '+str(stat_threshold))
+    logging.info('pgmFrequency threshold: '+ str(pgm_freq_threshold)+'\n')
 
-    filtered_table=filter_table(limma_table,group_column_header, nm_label,nm_stat_header,
-                                mod_stat_header, pgm_freq_header, stat_threshold, pgm_freq_threshold)
+    samples=exp_table[groups]['Sample'].dropna().to_list()
+
+
+    filtered_table=filter_table(limma_table,group_column_header, nm_label,nm_stat_header_contrast,
+                                mod_stat_header_contrast, pgm_freq_header, stat_threshold, pgm_freq_threshold)
     
-    print('Nº pgms before filtering:', len(limma_table))
-    print('Nº pgms after filtering:', len(filtered_table),'\n')
 
+    logging.info('Nº pgms before filtering: '+ str(len(limma_table)))
+    logging.info('Nº pgms after filtering: '+ str(len(filtered_table))+'\n')
 
-    
 
     prepared_table=prepare_table(filtered_table,samples,pgm_column_header,integrations_columns,columns_to_save,
                             prot_column_header,group_column_header)
-    formulas=[f'{binary_exp_table_label}~{i.split("_")[-1]}+{i}' for i in prepared_table[('pgm','BN')]]
-    variables=prepared_table[('pgm','BN')].to_list()
     
+
+
     logging.info('Standarizing data')
-
-
+    
+    
     norm_table=norm_files(prepared_table,integrations_columns,prot_integration_label, nm_integration_label, mod_integration_label,
                group_column_header,nm_label,
                samples, prot_column_header)
     
 
-    binary_table=pd.merge(exp_table,norm_table,left_on='Sample',right_on='Sample')
+    binary_table=pd.merge(exp_table[groups],norm_table,left_on='Sample',right_on='Sample')
+
     binary_table.columns=[i.replace('-','_') for i in binary_table.columns]
 
-    # binary_table.to_excel(r'S:\U_Proteomica\LABS\LAB_ARR\LaCaixa\tejidos-secretomas\New_Comet_500\final_iSanxot\Intima\Q1\reports\WF\3_FDRoptimizer\file_to_check.xlsx')
+    if correct_param ==1:
 
-    logging.info('Applying Binary loggistic regression')
+        formulas=[f'{binary_exp_table_label}~{i.split("_")[-1]}+{i}' for i in prepared_table[('pgm','BN')]]
+
+    else:
+
+        logging.info('You are not correcting by protein\'s Zq')
+        
+        formulas=[f'{binary_exp_table_label}~{i}' for i in prepared_table[('pgm','BN')]]
+
+    variables=prepared_table[('pgm','BN')].to_list()
+
+
+    logging.info('Applying Binary logistic regression')
+
     
-    report=binary_regression(binary_table,formulas,variables)
+    report=binary_regression(binary_table,formulas,variables, correct_param)
 
     logging.info('Writting file')
 
-    write_report(report,prepared_table,columns_to_save,path_report)
+
+    merged_report=merge_report(report,prepared_table,columns_to_save)
 
 
-    return report
+    report_plots=plot_joiner(merged_report, path_plots,path_plot_filtered,prot_column_header,
+                             filter_label,groups, outfolder)
+    
+    
+    report_format(report_plots, path_report,correct_param)
+
+
+    return report_plots
+
+
+
+
 
 
 if __name__ == '__main__':
@@ -247,24 +366,18 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--infile', required=True, help='Zqs file')
     parser.add_argument('-c', '--config', default=defaultconfig, help='Path to custom config.ini file')
     parser.add_argument('-e', '--experiment_table', required=True, help='Path to metadata.tsv file')
-    parser.add_argument('-o', '--outfile', required=True, help='Name of the output file')
+    parser.add_argument('-o', '--outfolder', required=True, help='Name of the output folder')
 
     args = parser.parse_args()
 
     path=args.infile
     path_exp=args.experiment_table
-    path_report=args.outfile
-    log_file = path_report[:-4] + '_binary_regression_log.txt'
-
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(levelname)s - %(message)s',
-                        datefmt='%m/%d/%Y %I:%M:%S %p',
-                        handlers=[logging.FileHandler(log_file),
-                                    logging.StreamHandler()])
+    path_report=args.outfolder
+ 
 
 
     # start main function
-    logging.info('start script: '+"{0}".format(" ".join([x for x in sys.argv])))
+
 
 
     config = configparser.ConfigParser(inline_comment_prefixes='#')
@@ -274,38 +387,69 @@ if __name__ == '__main__':
 
     """Reading parameters"""
 
-    group_column_header=tuple(eval(params['group_column_header.save']))
+    group_column_header=tuple(eval(params['group_column_header']))
     nm_label=params['nm_label']
-    nm_stat_header=tuple(eval(params['nm_statistic_header']))
-    mod_stat_header=tuple(eval(params['mod_statistic_header']))
-    pgm_freq_header=tuple(eval(params['pgm_freq_header.save']))
+    nm_stat_header=eval(params['nm_statistic_header'])
+    mod_stat_header=eval(params['mod_statistic_header'])
+    pgm_freq_header=tuple(eval(params['pgm_freq_header']))
     stat_threshold=float(params['stats_threshold'])
     pgm_freq_threshold=float(params['pgm_freq_threshold'])
-    pgm_column_header=tuple(eval(params['pgm_column_header.save']))
-    prot_column_header=tuple(eval(params['protein_column_header.save']))
+    pgm_column_header=tuple(eval(params['pgm_column_header']))
+    prot_column_header=tuple(eval(params['protein_column_header']))
 
     prot_integration_label=params['prot_integration_label']
     nm_integration_label=params['nm_integration_label']
     mod_integration_label=params['mod_integration_label']
     binary_exp_table_label=params['binary_exp_table_label']
+    correct_param=int(params['correct_by_protein'])
 
     integrations_columns= [prot_integration_label,nm_integration_label,mod_integration_label]
-    columns_to_save=[tuple(eval(params[i])) for i in list(params.keys()) if '.save' in i]
+    columns_to_save=[pgm_column_header, group_column_header, pgm_freq_header, 
+                     prot_column_header]+[tuple(eval(params[i])) for i in list(params.keys()) if '.save' in i]
+
+    groups= eval(params['groups'])
 
 
-    main(path,path_exp,group_column_header, nm_label,nm_stat_header,
-         mod_stat_header,pgm_freq_header, stat_threshold, pgm_freq_threshold,
+    path_plots=params['plot_total']
+    path_plot_filtered=params['plot_filtered']
+    filter_label= params['filter_label']
+
+    outfolder=os.path.join(path_report,'OR_results')
+
+    check_folder(outfolder)
+    log_file = os.path.join(outfolder,f'ORs_log.txt')
+
+    for i in groups:
+        
+        nm_stat_header_contrast=nm_stat_header.copy()
+        nm_stat_header_contrast[0]=nm_stat_header_contrast[0]+f'_{i}'
+        nm_stat_header_contrast=tuple(nm_stat_header_contrast)
+
+        mod_stat_header_contrast=mod_stat_header.copy()
+        mod_stat_header_contrast[0]=mod_stat_header_contrast[0]+f'_{i}'
+        mod_stat_header_contrast=tuple(mod_stat_header_contrast)
+
+
+        path_report_contrast=os.path.join(outfolder,f'ORs_{i}.xlsx')
+
+        logging.basicConfig(level=logging.INFO,
+                            format='%(asctime)s - %(levelname)s - %(message)s',
+                            datefmt='%m/%d/%Y %I:%M:%S %p',
+                            handlers=[logging.FileHandler(log_file),
+                                        logging.StreamHandler()])
+        
+        print('\n')
+        
+        logging.info('start script: '+"{0}".format(" ".join([x for x in sys.argv]))+'\n')
+
+        logging.info(f'Performing PTM OR calculation on {i} contrast'+'\n')
+
+        main(path,path_exp,group_column_header, nm_label,nm_stat_header_contrast,
+         mod_stat_header_contrast,pgm_freq_header, stat_threshold, pgm_freq_threshold,
          integrations_columns, columns_to_save, pgm_column_header,prot_column_header,
-         prot_integration_label, nm_integration_label, mod_integration_label, path_report,
-         binary_exp_table_label)
+         prot_integration_label, nm_integration_label, mod_integration_label,path_report_contrast,
+         binary_exp_table_label,i, path_plots, path_plot_filtered, filter_label, outfolder,
+         correct_param)
+        
 
-    logging.info('End script')
-
-    # file_handler = logging.FileHandler(os.path.join(os.path.dirname(path_report),
-    #                                                 os.path.basename(path).split('.tsv')[0]+'_ORs_calculator.log'))
-    
-    # logging.basicConfig(level=logging.INFO,
-    #                 format='%(asctime)s - %(levelname)s - %(message)s',
-    #                 datefmt='%m/%d/%Y %I:%M:%S %p',
-    #                 handlers=[file_handler,
-    #                             logging.StreamHandler()])
+        logging.info('End script'+'\n')

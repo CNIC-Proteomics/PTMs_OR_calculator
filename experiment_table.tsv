@@ -1,21 +1,32 @@
-Sample	Type
-D1ant	0
-D1post	0
-D2ant	0
-D2post	0
-D3ant	0
-D3post	0
-D4ant	0
-D4post	0
-D5ant	0
-D5post	0
-P1ant	1
-P1post	1
-P2ant	1
-P2post	1
-P3ant	1
-P3post	1
-P4ant	1
-P4post	1
-P5ant	1
-P5post	1
+MFS-C	MFS-C	LDS-C	LDS-C
+Sample	Type	Sample	Type
+C1	0	LDS1	1
+C2	0	LDS2	1
+C3	0	LDS3	1
+C4	0	LDS8	1
+C5	0	LDS9	1
+C6	0	LDS10	1
+C7	0	C1	0
+C8	0	C2	0
+C9	0	C3	0
+C10	0	C4	0
+C11	0	C5	0
+C12	0	C6	0
+C13	0	C7	0
+C14	0	C8	0
+C1_2	0	C9	0
+MFS1	1	C10	0
+MFS2	1	C11	0
+MFS3	1	C12	0
+MFS4	1	C13	0
+MFS5	1	C14	0
+MFS6	1	C1_2	0
+MFS7	1		
+MFS8	1		
+MFS9	1		
+MFS10	1		
+MFS11	1		
+MFS12	1		
+MFS13	1		
+MFS14	1		
+MFS1_2	1		
