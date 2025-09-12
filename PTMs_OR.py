@@ -208,8 +208,8 @@ def plot_joiner(final_report, path_plots, path_plot_filtered, prot_column_header
 
     else:
 
-        ptmMapPath_nofilt = os.path.join(os.path.dirname(outfolder), f'PTMMaps/{contrast}/plots')
-        ptmMapPath_filt = os.path.join(os.path.dirname(outfolder), f'PTMMaps/{contrast}/plots_{filter_label}')
+        ptmMapPath_nofilt = os.path.join(os.path.dirname(outfolder), f'PTMmaps/{contrast}')
+        ptmMapPath_filt = os.path.join(os.path.dirname(outfolder), f'PTMmaps_{filter_label}/{contrast}')
         plotted_q = [os.path.splitext(j)[0] for j in os.listdir(ptmMapPath_nofilt)]
         ptmMapPathExcel_nofilt = f'../PTMMaps/{contrast}/plots'
         ptmMapPathExcel_filt = f'../PTMMaps/{contrast}/plots_{filter_label}'
