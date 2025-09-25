@@ -201,7 +201,7 @@ def plot_joiner(final_report, path_plots, path_plot_filtered, prot_column_header
                                          contrast in os.path.dirname(path_plots) and contrast in os.path.dirname(path_plot_filtered) 
                                          else '' for j in final_report[prot_column_header]]
         
-        if contrast not in os.path.dirname(path_plots) or contrast not in os.path.dirname(path_plot_filtered):
+        if contrast not in os.path.basename(path_plots) or contrast not in os.path.basename(path_plot_filtered):
 
             logging.warning('You have provide PTMMaps that do not belong to the contrast you are analyzing')
 
