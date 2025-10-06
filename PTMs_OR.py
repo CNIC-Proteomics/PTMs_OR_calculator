@@ -159,8 +159,13 @@ def binary_regression(binary_table, formulas,variables, correct_param):
 
     if correct_param ==1:
         columns=['Intercept','Protein','Mod']
-    else:
+    elif correct_param == 0:
         columns=['Intercept','Mod']
+
+    elif correct_param ==2 :
+
+        columns=['Intercept','Protein']
+
     # columns=['Intercept','Protein']
     header=pd.MultiIndex.from_product([params,columns])
 
@@ -172,13 +177,19 @@ def binary_regression(binary_table, formulas,variables, correct_param):
     from operator import itemgetter
     df_final=df_final.reindex(sorted(df_final.columns, key=itemgetter(1)),axis=1)
 
+
     return df_final
 
 
-def merge_report(report,data_table,columns_to_save):
+def merge_report(report,data_table,columns_to_save, correct_param, prot_column_header):
 
     meta_data=data_table.set_index(('pgm','BN')).loc[:,columns_to_save]
     final_report=pd.merge(meta_data,report,left_index=True,right_index=True)
+
+
+    if correct_param==2:
+        final_report.drop_duplicates(subset=prot_column_header,inplace=True)
+        final_report=final_report.iloc[:,2:]
 
     return final_report
 
@@ -210,11 +221,11 @@ def plot_joiner(final_report, path_plots, path_plot_filtered, prot_column_header
 
         ptmMapPath_nofilt = os.path.join(os.path.dirname(outfolder), f'PTMMaps/{contrast}/plots')
         ptmMapPath_filt = os.path.join(os.path.dirname(outfolder), f'PTMMaps/{contrast}/plots_{filter_label}')
-        plotted_q = [os.path.splitext(j)[0] for j in os.listdir(ptmMapPath_nofilt)]
         ptmMapPathExcel_nofilt = f'../PTMMaps/{contrast}/plots'
         ptmMapPathExcel_filt = f'../PTMMaps/{contrast}/plots_{filter_label}'
 
         if os.path.exists(ptmMapPath_filt) and os.path.exists(ptmMapPath_nofilt):
+            plotted_q = [os.path.splitext(j)[0] for j in os.listdir(ptmMapPath_nofilt)]
 
             final_report[('PTMMap','NoFilt')]=[f"=HYPERLINK(\"{os.path.join(ptmMapPathExcel_nofilt, j)}.html\", \"{j}\")" if j in plotted_q else j for j in final_report[prot_column_header]]
             final_report[('PTMMap','Filt')]=[f"=HYPERLINK(\"{os.path.join(ptmMapPathExcel_filt, j)}.html\", \"{j}\")" if j in plotted_q else ''  for j in final_report[prot_column_header]]
@@ -233,6 +244,7 @@ def report_format (report_plots, path_report, correct_param):
     header=list(zip(*report_plots.columns.to_list()))
     report_plots.columns = np.arange(0, report_plots.shape[1])
     report_plots=pd.concat([pd.DataFrame(header),report_plots])
+
     report_plots.to_excel(path_report,index=False, header=False)
 
     toFormat = [n+1 for n,i in enumerate(report_plots.iloc[:, -1]) if 'HYPERLINK' in i]
@@ -248,6 +260,8 @@ def report_format (report_plots, path_report, correct_param):
     else:
         columns=['T','U']
 
+
+
     for i in toFormat:
         sheet[f'{columns[0]}{i}'].font = openpyxl.styles.Font(color='0000FF', underline='single')
 
@@ -261,6 +275,8 @@ def write_report(report,data_table,columns_to_save, path_report):
 
     meta_data=data_table.set_index(('pgm','BN')).loc[:,columns_to_save]
     final_report=pd.merge(meta_data,report,left_index=True,right_index=True)
+
+
     final_report.to_excel(path_report)
 
     return final_report
@@ -317,11 +333,15 @@ def main(path,path_exp,group_column_header, nm_label,nm_stat_header_contrast,
 
         formulas=[f'{binary_exp_table_label}~{i.split("_")[-1]}+{i}' for i in prepared_table[('pgm','BN')]]
 
-    else:
+    elif correct_param == 0:
 
         logging.info('You are not correcting by protein\'s Zq')
         
         formulas=[f'{binary_exp_table_label}~{i}' for i in prepared_table[('pgm','BN')]]
+
+    elif correct_param ==2:
+        logging.info('You are calculating protein\'s OR only')
+        formulas=[f'{binary_exp_table_label}~{i.split("_")[-1]}' for i in prepared_table[('pgm','BN')]]
 
     variables=prepared_table[('pgm','BN')].to_list()
 
@@ -334,7 +354,7 @@ def main(path,path_exp,group_column_header, nm_label,nm_stat_header_contrast,
     logging.info('Writting file')
 
 
-    merged_report=merge_report(report,prepared_table,columns_to_save)
+    merged_report=merge_report(report,prepared_table,columns_to_save,correct_param,prot_column_header)
 
 
     report_plots=plot_joiner(merged_report, path_plots,path_plot_filtered,prot_column_header,
