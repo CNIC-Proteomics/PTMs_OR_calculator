@@ -115,12 +115,13 @@ def norm_files(tabla,integrations_columns,prot_integration_label, nm_integration
 
 
 
-def binary_regression(binary_table, formulas,variables, correct_param):
+def binary_regression(binary_table, formulas,variables, correct_param, len_report):
 
     coefs=[]
     pvalues=[]
     ci=[]
     nobs=[]
+
 
     for i in range(len(formulas)):
 
@@ -142,9 +143,9 @@ def binary_regression(binary_table, formulas,variables, correct_param):
             nobs.append(model.nobs)
 
         except ValueError:
-            coefs.append(['NO']*3)
-            pvalues.append(['NO']*3)
-            ci.append(['NO']*6)
+            coefs.append(['NO']*len_report)
+            pvalues.append(['NO']*len_report)
+            ci.append(['NO']*(len_report*2))
             nobs.append(0)
             pass
 
@@ -154,6 +155,8 @@ def binary_regression(binary_table, formulas,variables, correct_param):
     # nobs_df=pd.DataFrame(nobs)
 
     df_results=pd.concat([coefs_df,pvalues_df,ci_df],axis=1)
+
+    
 
     params=['OR','pvalues','CI_2.5','CI_97.5']
 
@@ -183,13 +186,18 @@ def binary_regression(binary_table, formulas,variables, correct_param):
 
 def merge_report(report,data_table,columns_to_save, correct_param, prot_column_header):
 
-    meta_data=data_table.set_index(('pgm','BN')).loc[:,columns_to_save]
-    final_report=pd.merge(meta_data,report,left_index=True,right_index=True)
+    if correct_param!=2:
+
+        meta_data=data_table.set_index(('pgm','BN')).loc[:,columns_to_save]
+        final_report=pd.merge(meta_data,report,left_index=True,right_index=True)
 
 
-    if correct_param==2:
-        final_report.drop_duplicates(subset=prot_column_header,inplace=True)
-        final_report=final_report.iloc[:,2:]
+    else :
+        headers_protein=columns_to_save.copy()
+        headers_protein.remove(prot_column_header)
+        meta_data=data_table.drop_duplicates(subset=prot_column_header).set_index(prot_column_header).loc[:,headers_protein]
+        final_report=pd.merge(meta_data,report,left_index=True,right_index=True)
+        final_report=final_report.iloc[:,2:].reset_index(names=[prot_column_header])
 
     return final_report
 
@@ -332,24 +340,31 @@ def main(path,path_exp,group_column_header, nm_label,nm_stat_header_contrast,
     if correct_param ==1:
 
         formulas=[f'{binary_exp_table_label}~{i.split("_")[-1]}+{i}' for i in prepared_table[('pgm','BN')]]
+        
+        variables=prepared_table[('pgm','BN')].to_list()
+        len_report=3
 
     elif correct_param == 0:
 
         logging.info('You are not correcting by protein\'s Zq')
         
         formulas=[f'{binary_exp_table_label}~{i}' for i in prepared_table[('pgm','BN')]]
+        
+        variables=prepared_table[('pgm','BN')].to_list()
+        len_report=2
 
     elif correct_param ==2:
         logging.info('You are calculating protein\'s OR only')
-        formulas=[f'{binary_exp_table_label}~{i.split("_")[-1]}' for i in prepared_table[('pgm','BN')]]
+        formulas=list(set([f'{binary_exp_table_label}~{i.split("_")[-1]}' for i in prepared_table[('pgm','BN')]]))
+        variables= list(set(prepared_table[prot_column_header].to_list()))
+        len_report=2
 
-    variables=prepared_table[('pgm','BN')].to_list()
 
 
     logging.info('Applying Binary logistic regression')
 
     
-    report=binary_regression(binary_table,formulas,variables, correct_param)
+    report=binary_regression(binary_table,formulas,variables, correct_param, len_report)
 
     logging.info('Writting file')
 
@@ -450,7 +465,14 @@ if __name__ == '__main__':
         mod_stat_header_contrast=tuple(mod_stat_header_contrast)
 
 
-        path_report_contrast=os.path.join(outfolder,f'ORs_{i}.xlsx')
+        if correct_param==1:
+            suffix='_corrected'
+        elif correct_param==0:
+            suffix='_non_corrected'
+        elif correct_param==2:
+            suffix='_protein'
+
+        path_report_contrast=os.path.join(outfolder,f'{i}{suffix}_ORs.xlsx')
 
         logging.basicConfig(level=logging.INFO,
                             format='%(asctime)s - %(levelname)s - %(message)s',
